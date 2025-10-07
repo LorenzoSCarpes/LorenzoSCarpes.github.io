@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mapa Interactivo de Referencias Catastrales</title>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
+
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 20px; background-color: #f4f4f4; color: #333; }
+        h1 { color: #2c3e50; text-align: center; margin-bottom: 20px; }
+        .container { max-width: 1300px; margin: 0 auto; background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); display: flex; flex-wrap: wrap; gap: 20px; }
+        .controls { flex: 1; min-width: 320px; }
+        .map-container { flex: 2; min-width: 600px; display: flex; flex-direction: column; gap: 20px; }
+        #map { height: 600px; width: 100%; border-radius: 8px; box-shadow: inset 0 0 5px rgba(0,0,0,0.1); }
+        textarea { width: 100%; height: 150px; padding: 10px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; font-family: monospace; font-size: 0.9em; }
+        button { background-color: #3498db; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 1em; }
+        #status { margin-top: 20px; padding: 10px; border-radius: 4px; min-height: 20px; }
+        .status-info { background-color: #e7f3fe; border: 1px solid #d0e7fa; color: #3498db; }
+        .status-success { background-color: #d4edda; border-color: #c3e6cb; color: #155724; }
+        .status-error { background-color: #f8d7da; border-color: #f5c6cb; color: #721c24; }
+        #selection-results { border: 1px solid #ddd; border-radius: 8px; padding: 15px; background-color: #f9f9f9; max-height: 400px; overflow-y: auto; }
+        #selection-results h3 { margin-top: 0; }
+        #selection-list { list-style-type: none; padding: 0; margin: 0; }
+        #selection-list li { padding: 8px 5px; border-bottom: 1px solid #eee; font-family: monospace; display: flex; justify-content: space-between; flex-wrap: wrap; }
+        #failed-references-box { margin-top: 15px; padding: 15px; border-radius: 8px; background-color: #fff3cd; border: 1px solid #ffeeba; color: #856404; }
+        #failed-references-list { list-style-type: disc; padding-left: 20px; margin: 10px 0 0 0; font-family: monospace; }
+    </style>
+</head>
+<body>
+    <h1>Visualizador de Referencias Catastrales</h1>
+
+    <div class="container">
+        <div class="controls">
+            <label for="cadastralReferences">Introduce RC, Precio e ID (separados por tabulador):</label>
+            <textarea id="cadastralReferences" placeholder="Ejemplo:
+9872023VH5797S0001WX    120.000,00 €    1001
+REFERENCIA_INCORRECTA   50.000,00 € 1002
+">0651518XG5905S    65.000,00 € 107923777
+0651216XG5905S  55.000,00 € 107923778
+ESTA_ESTA_MAL   75.000,00 € 107923779
+0651513XG5905S  110.000,00 €    107923780</textarea>
+            <button id="loadReferencesBtn">Cargar Referencias</button>
+            <div id="status" class="status-info">Esperando referencias...</div>
+            <div id="failed-references-box" style="display: none;">
+                <p><strong>Las siguientes referencias no se encontraron:</strong></p>
+                <ul id="failed-references-list"></ul>
+            </div>
+        </div>
+        <div class="map-container">
+            <div id="map"></div>
+            <div id="selection-results" style="display: none;">
+                <h3>Marcadores Seleccionados</h3>
+                <ul id="selection-list"></ul>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.11.0/proj4.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4leaflet/1.0.2/proj4leaflet.min.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+
+    <script>
+        // Definiciones Proj4js y configuración del mapa
+        proj4.defs("EPSG:25829", "+proj=utm +zone=29 +ellps=GRS80 +units=m +no_defs");
+        proj4.defs("EPSG:25830", "+proj=utm +zone=30 +ellps=GRS80 +units=m +no_defs");
+        proj4.defs("EPSG:25831", "+proj=utm +zone=31 +ellps=GRS80 +units=m +no_defs");
+
+        const map = L.map('map').setView([40.416775, -3.703790], 6);
+
+        // Capas de mapa y control
+        const baseMaps = {
+            "OpenStreetMap": L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap' }).addTo(map),
+            "Ortofotografía (PNOA)": L.tileLayer.wms("https://www.ign.es/wms-inspire/pnoa-ma", { layers: 'OI.OrthoimageCoverage', format: 'image/jpeg', attribution: '&copy; PNOA (IGN)' }),
+            "Cartografía Catastral": L.tileLayer.wms("http://ovc.catastro.meh.es/Cartografia/WMS/ServidorWMS.aspx", { layers: 'Catastro', format: 'image/png', transparent: true, attribution: '&copy; D.G. Catastro' })
+        };
+        L.control.layers(baseMaps).addTo(map);
+
+        // Grupo de marcadores
+        const markers = L.markerClusterGroup();
+        map.addLayer(markers);
+
+        // Selectores de elementos del DOM
+        const loadReferencesBtn = document.getElementById('loadReferencesBtn');
+        const statusDiv = document.getElementById('status');
+        const failedReferencesBox = document.getElementById('failed-references-box');
+        const failedReferencesList = document.getElementById('failed-references-list');
+        const selectionResultsDiv = document.getElementById('selection-results');
+        const selectionList = document.getElementById('selection-list');
+
+        // Configuración de Leaflet.draw
+        const drawnItems = new L.FeatureGroup().addTo(map);
+        const drawControl = new L.Control.Draw({
+            draw: { polygon: true, polyline: false, rectangle: false, circle: false, marker: false, circlemarker: false },
+            edit: { featureGroup: drawnItems }
+        });
+        map.addControl(drawControl);
+
+        // Event Listeners
+        loadReferencesBtn.addEventListener('click', loadCadastralReferences);
+        document.addEventListener('DOMContentLoaded', loadCadastralReferences);
+        map.on(L.Draw.Event.CREATED, (e) => { drawnItems.clearLayers().addLayer(e.layer); selectMarkersInPolygon(e.layer); });
+        map.on(L.Draw.Event.DELETED, () => { selectionResultsDiv.style.display = 'none'; });
+
+        // --- FUNCIONES PRINCIPALES ---
+
+        async function loadCadastralReferences() {
+            const rawInputs = document.getElementById('cadastralReferences').value.split('\n')
+                .map(line => line.trim()).filter(line => line.length > 0)
+                .map(line => {
+                    const parts = line.split('\t');
+                    return { 
+                        // Guardamos la RC original completa
+                        rc: parts[0]?.trim(), 
+                        price: parts[1]?.trim() || '', 
+                        id: parts[2]?.trim() || '' 
+                    };
+                });
+
+            if (rawInputs.length === 0) return;
+            
+            updateStatus('Cargando...', 'status-info');
+            loadReferencesBtn.disabled = true;
+            markers.clearLayers();
+            failedReferencesBox.style.display = 'none';
+            failedReferencesList.innerHTML = '';
+            
+            const results = await Promise.all(rawInputs.map(fetchCadastralData));
+            
+            const bounds = [];
+            const failedRCs = [];
+
+            results.forEach(data => {
+                if (data && data.lat && data.lng) {
+                    const marker = L.marker([data.lat, data.lng]);
+                    marker.customData = data;
+                    
+                    // Usamos la RC COMPLETA para mostrarla, copiarla y generar el enlace de Catastro.
+                    const fullRC = data.rc; 
+                    
+                    // Enlace con función de copiado para el Popup
+                    const catastroLink = `<a href="https://www1.sedecatastro.gob.es/Cartografia/mapa.aspx?refcat=${fullRC}" target="_blank" onclick="copyToClipboard(event, '${fullRC}', 'Referencia ${fullRC} copiada.')">${fullRC}</a>`;
+                    
+                    marker.bindPopup(`<b>RC:</b> ${catastroLink}<br><b>Precio:</b> ${data.price || 'N/D'}<br><b>ID:</b> ${data.id || 'N/D'}`);
+                    
+                    markers.addLayer(marker);
+                    bounds.push([data.lat, data.lng]);
+                } else if(data.rc) {
+                    failedRCs.push(data.rc);
+                }
+            });
+
+            if (bounds.length > 0) map.fitBounds(bounds, { padding: [50, 50] });
+            
+            const successCount = bounds.length;
+            const errorCount = failedRCs.length;
+
+            if (errorCount > 0) {
+                failedRCs.forEach(rc => {
+                    const li = document.createElement('li');
+                    li.textContent = rc;
+                    failedReferencesList.appendChild(li);
+                });
+                failedReferencesBox.style.display = 'block';
+            }
+
+            if (successCount > 0 && errorCount === 0) {
+                updateStatus(`Carga completada. ${successCount} referencias mostradas.`, 'status-success');
+            } else if (successCount > 0 && errorCount > 0) {
+                updateStatus(`${successCount} refs. cargadas, ${errorCount} fallidas.`, 'status-error');
+            } else if (successCount === 0 && errorCount > 0) {
+                updateStatus(`No se pudo cargar ninguna de las ${errorCount} refs.`, 'status-error');
+            }
+            
+            loadReferencesBtn.disabled = false;
+        }
+
+        async function fetchCadastralData(rcInfo) {
+            const { rc, price, id } = rcInfo;
+            if (!rc) return { ...rcInfo, lat: null };
+            
+            // Lógica para tomar solo los primeros 14 dígitos si la RC es más larga
+            const rcForApi = rc.length > 14 ? rc.substring(0, 14) : rc;
+            
+            const apiUrl = `https://ovc.catastro.meh.es/OVCServWeb/OVCWcfCallejero/COVCCoordenadas.svc/json/Consulta_CPMRC?RefCat=${rcForApi}`;
+            
+            try {
+                const response = await fetch(apiUrl);
+                if (!response.ok) return { ...rcInfo, lat: null };
+                const data = await response.json();
+                const coordData = data.Consulta_CPMRCResult?.coordenadas?.coord?.[0];
+                if (coordData?.geo) {
+                    const x = parseFloat(coordData.geo.xcen);
+                    const y = parseFloat(coordData.geo.ycen);
+                    const srs = coordData.geo.srs;
+                    if (isNaN(x) || isNaN(y) || !srs) return { ...rcInfo, lat: null };
+                    let lat, lng;
+                    if (srs === "EPSG:4326") { [lng, lat] = [x, y]; }
+                    else if (proj4.defs[srs]) { [lng, lat] = proj4(srs, "EPSG:4326", [x, y]); }
+                    else { return { ...rcInfo, lat: null }; }
+                    // Devolvemos el objeto original con la RC completa, pero con las coordenadas encontradas.
+                    return { ...rcInfo, lat, lng };
+                }
+                return { ...rcInfo, lat: null };
+            } catch (error) {
+                return { ...rcInfo, lat: null };
+            }
+        }
+        
+        function updateStatus(message, className) {
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${className}`;
+        }
+
+        function selectMarkersInPolygon(polygonLayer) {
+            const allMarkers = markers.getLayers();
+            const selectedData = allMarkers
+                .filter(marker => isMarkerInsidePolygon(marker, polygonLayer))
+                .map(marker => marker.customData);
+            
+            displaySelectionResults(selectedData);
+        }
+
+        function displaySelectionResults(dataList) {
+            selectionList.innerHTML = '';
+            if (dataList.length === 0) {
+                selectionResultsDiv.style.display = 'none';
+                return;
+            }
+            
+            selectionResultsDiv.querySelector('h3').textContent = `${dataList.length} Marcadores Seleccionados`;
+            dataList.forEach(data => {
+                const li = document.createElement('li');
+                
+                const fullRC = data.rc;
+                
+                // MODIFICACIÓN CLAVE: Se usa la RC COMPLETA para mostrar, copiar y enlazar
+                const catastroLink = `<a href="https://www1.sedecatastro.gob.es/Cartografia/mapa.aspx?refcat=${fullRC}" target="_blank" onclick="copyToClipboard(event, '${fullRC}', 'Referencia ${fullRC} copiada.')">${fullRC}</a>`;
+                
+                // Enlace al PDF
+                const pdfLink = `<a href="PDF/${data.id}.pdf" target="_blank">${data.id}</a>`;
+
+                li.innerHTML = `
+                    <span>RC: ${catastroLink}</span>
+                    <span>Precio: ${data.price || 'N/D'}</span>
+                    <span>ID: ${pdfLink}</span>
+                `;
+                selectionList.appendChild(li);
+            });
+            selectionResultsDiv.style.display = 'block';
+        }
+
+        function isMarkerInsidePolygon(marker, polygon) {
+            const latlng = marker.getLatLng();
+            const polyPoints = polygon.getLatLngs()[0];
+            let x = latlng.lng, y = latlng.lat;
+            let inside = false;
+            for (let i = 0, j = polyPoints.length - 1; i < polyPoints.length; j = i++) {
+                let xi = polyPoints[i].lng, yi = polyPoints[i].lat;
+                let xj = polyPoints[j].lng, yj = polyPoints[j].lat;
+                let intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+                if (intersect) inside = !inside;
+            }
+            return inside;
+        }
+
+        /**
+         * Función para copiar texto al portapapeles y notificar al usuario.
+         */
+        function copyToClipboard(event, textToCopy, successMessage) {
+            // Detener la acción por defecto (abrir el enlace)
+            event.preventDefault(); 
+
+            if (navigator.clipboard && window.isSecureContext) {
+                // API del Portapapeles (método moderno y preferido)
+                navigator.clipboard.writeText(textToCopy)
+                    .then(() => {
+                        // Notificación de éxito
+                        updateStatus(successMessage, 'status-success');
+                        
+                        // Abrir el enlace después de un breve retraso para ver la notificación
+                        setTimeout(() => {
+                            window.open(event.target.href, '_blank');
+                            updateStatus('Esperando referencias...', 'status-info'); 
+                        }, 500); 
+                    })
+                    .catch(err => {
+                        console.error('Error al copiar:', err);
+                        updateStatus('Error al copiar al portapapeles. Inténtalo manualmente.', 'status-error');
+                        // Abrir el enlace si falla la copia
+                        setTimeout(() => {
+                            window.open(event.target.href, '_blank');
+                            updateStatus('Esperando referencias...', 'status-info');
+                        }, 500);
+                    });
+            } else {
+                // Método de respaldo para navegadores antiguos
+                const textArea = document.createElement("textarea");
+                textArea.value = textToCopy;
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                try {
+                    document.execCommand('copy');
+                    updateStatus(successMessage, 'status-success');
+                } catch (err) {
+                    console.error('Error al copiar (fallback):', err);
+                    updateStatus('Error al copiar al portapapeles.', 'status-error');
+                }
+                document.body.removeChild(textArea);
+                
+                // Abrir el enlace
+                setTimeout(() => {
+                    window.open(event.target.href, '_blank');
+                    updateStatus('Esperando referencias...', 'status-info');
+                }, 500);
+            }
+        }
+    </script>
+</body>
+</html>
