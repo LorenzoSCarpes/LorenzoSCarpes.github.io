@@ -36,14 +36,10 @@
 
     <div class="container">
         <div class="controls">
-            <label for="cadastralReferences">Introduce RC, Precio e ID (separados por tabulador):</label>
-            <textarea id="cadastralReferences" placeholder="Ejemplo:
-9872023VH5797S0001WX    120.000,00 €    1001
-REFERENCIA_INCORRECTA   50.000,00 € 1002
-">0651518XG5905S    65.000,00 € 107923777
-0651216XG5905S  55.000,00 € 107923778
-ESTA_ESTA_MAL   75.000,00 € 107923779
-0651513XG5905S  110.000,00 €    107923780</textarea>
+<label for="cadastralReferences">Introduce RC, Precio e ID (separados por tabulador):</label>
+            <textarea id="cadastralReferences" placeholder="Ejemplo:&#10;9872023VH5797S0001WX	120.000,00€	1001">0651518XG5905S	65.000,00 €	107923777
+0651216XG5905S	55.000,00 €	107923778
+0651513XG5905S	110.000,00 €	107923780</textarea>
             <button id="loadReferencesBtn">Cargar Referencias</button>
             <div id="status" class="status-info">Esperando referencias...</div>
             <div id="failed-references-box" style="display: none;">
@@ -147,7 +143,10 @@ ESTA_ESTA_MAL   75.000,00 € 107923779
                     // Enlace con función de copiado para el Popup
                     const catastroLink = `<a href="https://www1.sedecatastro.gob.es/Cartografia/mapa.aspx?refcat=${fullRC}" target="_blank" onclick="copyToClipboard(event, '${fullRC}', 'Referencia ${fullRC} copiada.')">${fullRC}</a>`;
                     
-                    marker.bindPopup(`<b>RC:</b> ${catastroLink}<br><b>Precio:</b> ${data.price || 'N/D'}<br><b>ID:</b> ${data.id || 'N/D'}`);
+                    // Enlace a Google Street View
+                    const streetViewLink = `<a href="https://www.google.com/maps?q=&layer=c&cbll=${data.lat},${data.lng}" target="_blank">Street View</a>`;
+
+                    marker.bindPopup(`<b>RC:</b> ${catastroLink}<br><b>Precio:</b> ${data.price || 'N/D'}<br><b>ID:</b> ${data.id || 'N/D'}<br><b>Ver:</b> ${streetViewLink}`);
                     
                     markers.addLayer(marker);
                     bounds.push([data.lat, data.lng]);
