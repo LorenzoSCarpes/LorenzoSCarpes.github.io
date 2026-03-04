@@ -29,9 +29,9 @@
         #failed-references-box { margin-top: 15px; padding: 15px; border-radius: 8px; background-color: #fff3cd; border: 1px solid #ffeeba; color: #856404; }
         #failed-references-list { list-style-type: disc; padding-left: 20px; margin: 10px 0 0 0; font-family: monospace; }
         
-        /* Estilos de la nueva tabla */
-        .results-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.85em; /* Un poco más pequeño para acomodar las URLs */ }
-        .results-table th, .results-table td { border: 1px solid #ddd; padding: 10px 8px; text-align: left; word-break: break-all; /* Permite que las URLs largas se dividan */ }
+        /* Estilos de la tabla */
+        .results-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.85em; }
+        .results-table th, .results-table td { border: 1px solid #ddd; padding: 10px 8px; text-align: left; word-break: break-all; }
         .results-table th { background-color: #34495e; color: white; position: sticky; top: 0; }
         .results-table tr:nth-child(even) { background-color: #f2f2f2; }
         .results-table tr:hover { background-color: #e8f4f8; }
@@ -162,13 +162,15 @@
                     marker.customData = data;
                     
                     const fullRC = data.rc; 
-                    const catastroUrl = `https://www1.sedecatastro.gob.es/Cartografia/mapa.aspx?refcat=${fullRC}`;
-                    const catastroLink = `<a href="${catastroUrl}" target="_blank" onclick="copyToClipboard(event, '${fullRC}', 'Referencia ${fullRC} copiada.')">${catastroUrl}</a>`;
                     
-                    const streetViewUrl = `https://www.google.com/maps?q=&layer=c&cbll=$${data.lat},${data.lng}`;
-                    const streetViewLink = `<a href="${streetViewUrl}" target="_blank">${streetViewUrl}</a>`;
+                    // Enlaces para el Popup del mapa (Textos cortos)
+                    const catastroUrl = `https://www1.sedecatastro.gob.es/Cartografia/mapa.aspx?refcat=${fullRC}`;
+                    const catastroPopupLink = `<a href="${catastroUrl}" target="_blank" onclick="copyToClipboard(event, '${fullRC}', 'Referencia ${fullRC} copiada.')">${fullRC}</a>`;
+                    
+                    const streetViewUrl = `https://www.google.com/maps?layer=c&cbll=${data.lat},${data.lng}`;
+                    const streetViewPopupLink = `<a href="${streetViewUrl}" target="_blank">Street View</a>`;
 
-                    marker.bindPopup(`<b>RC:</b> ${catastroLink}<br><b>Precio:</b> ${data.price || 'N/D'}<br><b>ID:</b> ${data.id || 'N/D'}<br><b>Vista:</b> ${streetViewLink}`);
+                    marker.bindPopup(`<b>RC:</b> ${catastroPopupLink}<br><b>Precio:</b> ${data.price || 'N/D'}<br><b>ID:</b> ${data.id || 'N/D'}<br><b>Ver:</b> ${streetViewPopupLink}`);
                     
                     markers.addLayer(marker);
                     bounds.push([data.lat, data.lng]);
@@ -262,21 +264,21 @@
                 const tr = document.createElement('tr');
                 const fullRC = data.rc;
                 
-                // Generamos las URLs completas como cadenas de texto
+                // URLs completas
                 const catastroUrl = `https://www1.sedecatastro.gob.es/Cartografia/mapa.aspx?refcat=${fullRC}`;
-                const streetViewUrl = `https://www.google.com/maps?q=&layer=c&cbll=$${data.lat},${data.lng}`;
+                const streetViewUrl = `https://www.google.com/maps?layer=c&cbll=${data.lat},${data.lng}`;
                 
-                // Creamos los enlaces HTML utilizando las URLs generadas como el texto a mostrar
-                const catastroLink = `<a href="${catastroUrl}" target="_blank" onclick="copyToClipboard(event, '${fullRC}', 'Referencia ${fullRC} copiada.')">${catastroUrl}</a>`;
-                const streetViewLink = (data.lat && data.lng) ? `<a href="${streetViewUrl}" target="_blank">${streetViewUrl}</a>` : 'N/D';
+                // Enlaces para la tabla (mostrando la URL completa como texto)
+                const catastroTableLink = `<a href="${catastroUrl}" target="_blank" onclick="copyToClipboard(event, '${fullRC}', 'Referencia ${fullRC} copiada.')">${catastroUrl}</a>`;
+                const streetViewTableLink = (data.lat && data.lng) ? `<a href="${streetViewUrl}" target="_blank">${streetViewUrl}</a>` : 'N/D';
                 const pdfLink = data.id ? `<a href="PDF/${data.id}.pdf" target="_blank">${data.id}</a>` : 'N/D';
 
                 tr.innerHTML = `
                     <td><strong>${fullRC}</strong></td>
                     <td>${data.price || 'N/D'}</td>
                     <td>${pdfLink}</td>
-                    <td>${catastroLink}</td>
-                    <td>${streetViewLink}</td>
+                    <td>${catastroTableLink}</td>
+                    <td>${streetViewTableLink}</td>
                 `;
                 selectionList.appendChild(tr);
             });
